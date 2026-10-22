@@ -1,0 +1,698 @@
+# Kubernetes-Deployment für die aktuelle ML-Anomalieerkennung
+# Architektur: Elec2 -> ML-Anomalie-Service -> Prometheus -> Grafana
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ml-monitoring
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ml-anomalie-service
+  namespace: ml-monitoring
+  labels:
+    app: ml-anomalie-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ml-anomalie-service
+  template:
+    metadata:
+      labels:
+        app: ml-anomalie-service
+    spec:
+      containers:
+      - name: ml-anomalie-service
+        image: ml-anomalie-service:demo
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 8000
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: '1'
+            memory: 512Mi
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ml-anomalie-service
+  namespace: ml-monitoring
+  labels:
+    app: ml-anomalie-service
+spec:
+  selector:
+    app: ml-anomalie-service
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 8000
+  type: ClusterIP
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: ml-monitoring
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 5s
+      scrape_timeout: 5s
+      evaluation_interval: 5s
+    scrape_configs:
+      - job_name: "prometheus"
+        static_configs:
+          - targets: ["localhost:9090"]
+      - job_name: "ml-anomalie-service"
+        metrics_path: /metrics
+        static_configs:
+          - targets: ["ml-anomalie-service:8000"]
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: ml-monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      containers:
+      - name: prometheus
+        image: prom/prometheus:v3.5.0
+        ports:
+        - name: http
+          containerPort: 9090
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        volumeMounts:
+        - name: prometheus-config
+          mountPath: /etc/prometheus/prometheus.yml
+          subPath: prometheus.yml
+      volumes:
+      - name: prometheus-config
+        configMap:
+          name: prometheus-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: ml-monitoring
+spec:
+  selector:
+    app: prometheus
+  ports:
+  - name: http
+    port: 9090
+    targetPort: 9090
+  type: NodePort
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasource
+  namespace: ml-monitoring
+data:
+  grafana-prometheus.yml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus:9090
+        isDefault: true
+        editable: false
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-provider
+  namespace: ml-monitoring
+data:
+  dashboard.yml: |
+    apiVersion: 1
+    providers:
+      - name: "Masterarbeit"
+        orgId: 1
+        folder: "Masterarbeit"
+        type: file
+        disableDeletion: false
+        updateIntervalSeconds: 10
+        allowUiUpdates: true
+        options:
+          path: /var/lib/grafana/dashboards
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-monitoring-dashboard
+  namespace: ml-monitoring
+data:
+  kubernetes_ml_anomaly.json: |-
+    {
+      "annotations": {
+        "list": []
+      },
+      "editable": true,
+      "graphTooltip": 1,
+      "panels": [
+        {
+          "id": 1,
+          "type": "stat",
+          "title": "Systemzustand",
+          "description": "Operativer Systemzustand: NORMAL oder ANOMALY.",
+          "gridPos": {
+            "h": 4,
+            "w": 8,
+            "x": 0,
+            "y": 0
+          },
+          "targets": [
+            {
+              "expr": "ml_anomaly_system_classification",
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [
+                {
+                  "type": "value",
+                  "options": {
+                    "0": {
+                      "text": "NORMAL"
+                    },
+                    "1": {
+                      "text": "ANOMALY"
+                    }
+                  }
+                }
+              ]
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "value",
+            "orientation": "auto",
+            "justifyMode": "center",
+            "colorMode": "value"
+          }
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Daten verarbeitet",
+          "description": "Anzahl der bisher im aktuellen Cycle verarbeiteten Beobachtungen.",
+          "gridPos": {
+            "h": 4,
+            "w": 8,
+            "x": 8,
+            "y": 0
+          },
+          "targets": [
+            {
+              "expr": "ml_anomaly_cycle_step + 1",
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "decimals": 0
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "value",
+            "orientation": "auto",
+            "justifyMode": "center",
+            "colorMode": "value"
+          }
+        },
+        {
+          "id": 4,
+          "type": "table",
+          "title": "Aktive Diagnose",
+          "description": "Konsolidierte Diagnose: Anomalietyp, Root Cause, Trigger und Remediation.",
+          "gridPos": {
+            "h": 6,
+            "w": 24,
+            "x": 0,
+            "y": 4
+          },
+          "targets": [
+            {
+              "expr": "ml_anomaly_diagnostic_active",
+              "format": "table",
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "Value": true,
+                  "__name__": true,
+                  "instance": true,
+                  "job": true
+                },
+                "indexByName": {
+                  "anomaly_type": 0,
+                  "root_cause": 1,
+                  "trigger_feature": 2,
+                  "remediation": 3
+                },
+                "renameByName": {
+                  "anomaly_type": "Anomalietyp",
+                  "root_cause": "Root Cause",
+                  "trigger_feature": "Trigger",
+                  "remediation": "Remediation"
+                }
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": []
+          }
+        },
+        {
+          "id": 5,
+          "type": "timeseries",
+          "title": "Data Drift – PSI und KS",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 17
+          },
+          "targets": [
+            {
+              "expr": "ml_anomaly_drift_psi",
+              "legendFormat": "PSI – {{feature}}",
+              "refId": "A"
+            },
+            {
+              "expr": "ml_anomaly_drift_ks_pvalue",
+              "legendFormat": "KS p-value – {{feature}}",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
+        },
+        {
+          "id": 6,
+          "type": "timeseries",
+          "title": "ML-Detektoren",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 17
+          },
+          "targets": [
+            {
+              "expr": "ml_anomaly_isolation_forest_score",
+              "legendFormat": "Isolation Forest",
+              "refId": "A"
+            },
+            {
+              "expr": "ml_anomaly_one_class_svm_distance",
+              "legendFormat": "One-Class SVM",
+              "refId": "B"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
+        },
+        {
+          "id": 7,
+          "type": "timeseries",
+          "title": "Kontrollierte Infrastrukturindikatoren",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 25
+          },
+          "targets": [
+            {
+              "expr": "ml_anomaly_cpu_usage_percent",
+              "legendFormat": "CPU (%)",
+              "refId": "A"
+            },
+            {
+              "expr": "ml_anomaly_memory_usage_percent",
+              "legendFormat": "Memory (%)",
+              "refId": "B"
+            },
+            {
+              "expr": "ml_anomaly_pod_restarts_total",
+              "legendFormat": "Pod-Restarts",
+              "refId": "C"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
+        },
+        {
+          "id": 8,
+          "type": "timeseries",
+          "title": "Elec2-Datenstrom",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 25
+          },
+          "targets": [
+            {
+              "expr": "ml_anomaly_nswprice",
+              "legendFormat": "NSW Price",
+              "refId": "A"
+            },
+            {
+              "expr": "ml_anomaly_nswdemand",
+              "legendFormat": "NSW Demand",
+              "refId": "B"
+            },
+            {
+              "expr": "ml_anomaly_vicprice",
+              "legendFormat": "VIC Price",
+              "refId": "C"
+            },
+            {
+              "expr": "ml_anomaly_vicdemand",
+              "legendFormat": "VIC Demand",
+              "refId": "D"
+            },
+            {
+              "expr": "ml_anomaly_transfer",
+              "legendFormat": "Transfer",
+              "refId": "E"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
+        },
+        {
+          "id": 9,
+          "type": "table",
+          "title": "Aktuelle Anomaliediagnose",
+          "description": "Zeitliche Historie der erkannten Anomalien.",
+          "gridPos": {
+            "h": 7,
+            "w": 24,
+            "x": 0,
+            "y": 10
+          },
+          "targets": [
+            {
+              "expr": "ml_anomaly_diagnostic_active{anomaly_type!=\"NONE\"}",
+              "format": "table",
+              "refId": "A"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "__name__": true,
+                  "instance": true,
+                  "job": true,
+                  "Value": true
+                },
+                "indexByName": {
+                  "Time": 0,
+                  "anomaly_type": 1,
+                  "root_cause": 2,
+                  "trigger_feature": 3,
+                  "remediation": 4
+                },
+                "renameByName": {
+                  "Time": "Zeit",
+                  "anomaly_type": "Anomalietyp",
+                  "root_cause": "Root Cause",
+                  "trigger_feature": "Trigger",
+                  "remediation": "Remediation"
+                }
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": []
+          },
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false
+            }
+          }
+        },
+        {
+          "id": 10,
+          "type": "stat",
+          "title": "Pod-Restarts",
+          "description": "Aktuelle Anzahl der Pod-Restarts.",
+          "gridPos": {
+            "h": 4,
+            "w": 8,
+            "x": 16,
+            "y": 0
+          },
+          "targets": [
+            {
+              "expr": "ml_anomaly_pod_restarts_total",
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "decimals": 0
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "value",
+            "orientation": "auto",
+            "justifyMode": "center",
+            "colorMode": "value"
+          }
+        }
+      ],
+      "schemaVersion": 39,
+      "style": "dark",
+      "tags": [
+        "master-thesis",
+        "mlops",
+        "anomaly-detection",
+        "kubernetes",
+        "root-cause",
+        "monitoring"
+      ],
+      "templating": {
+        "list": []
+      },
+      "time": {
+        "from": "now-5m",
+        "to": "now"
+      },
+      "title": "ML Pipeline – Monitoring und Root Cause",
+      "uid": "ml-monitoring-overview",
+      "version": 11,
+      "refresh": "1s"
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: ml-monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+      - name: grafana
+        image: grafana/grafana:12.1.1
+        ports:
+        - name: http
+          containerPort: 3000
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        env:
+        - name: GF_SECURITY_ADMIN_USER
+          value: admin
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          value: admin
+        - name: GF_USERS_ALLOW_SIGN_UP
+          value: 'false'
+        volumeMounts:
+        - name: grafana-datasource
+          mountPath: /etc/grafana/provisioning/datasources/grafana-prometheus.yml
+          subPath: grafana-prometheus.yml
+        - name: grafana-dashboard-provider
+          mountPath: /etc/grafana/provisioning/dashboards/dashboard.yml
+          subPath: dashboard.yml
+        - name: grafana-monitoring-dashboard
+          mountPath: /var/lib/grafana/dashboards/kubernetes_ml_anomaly.json
+          subPath: kubernetes_ml_anomaly.json
+      volumes:
+      - name: grafana-datasource
+        configMap:
+          name: grafana-datasource
+      - name: grafana-dashboard-provider
+        configMap:
+          name: grafana-dashboard-provider
+      - name: grafana-monitoring-dashboard
+        configMap:
+          name: grafana-monitoring-dashboard
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: ml-monitoring
+spec:
+  selector:
+    app: grafana
+  ports:
+  - name: http
+    port: 3000
+    targetPort: 3000
+  type: NodePort

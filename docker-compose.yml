@@ -1,0 +1,59 @@
+services:
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    container_name: master-prometheus
+    restart: unless-stopped
+
+    ports:
+      - "9090:9090"
+
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+
+    networks:
+      - ml-monitoring
+
+
+  grafana:
+    image: grafana/grafana:12.1.1
+    container_name: master-grafana
+    restart: unless-stopped
+
+    ports:
+      - "3000:3000"
+
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+
+    volumes:
+      - grafana_data:/var/lib/grafana
+
+      # Datasource und Dashboard automatisch laden
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+
+      # Einziger Dashboard
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+
+    depends_on:
+      - prometheus
+
+    networks:
+      - ml-monitoring
+
+
+volumes:
+  prometheus_data:
+  grafana_data:
+
+
+networks:
+  ml-monitoring:
+    driver: bridge

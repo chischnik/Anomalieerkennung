@@ -1,0 +1,403 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Systemzustand",
+      "description": "Operativer Systemzustand: NORMAL oder ANOMALY.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "ml_anomaly_system_classification",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "NORMAL"
+                },
+                "1": {
+                  "text": "ANOMALY"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "orientation": "auto",
+        "justifyMode": "center",
+        "colorMode": "value"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Daten verarbeitet",
+      "description": "Anzahl der bisher im aktuellen Cycle verarbeiteten Beobachtungen.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "ml_anomaly_cycle_step + 1",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "orientation": "auto",
+        "justifyMode": "center",
+        "colorMode": "value"
+      }
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Pod-Restarts",
+      "description": "Aktuelle Anzahl der kontrolliert erfassten Pod-Restarts.",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "ml_anomaly_pod_restarts_total",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "orientation": "auto",
+        "justifyMode": "center",
+        "colorMode": "value"
+      }
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Aktive Diagnose",
+      "description": "Konsolidierte Diagnose: Anomalietyp, Root Cause, Trigger und Remediation.",
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "targets": [
+        {
+          "expr": "ml_anomaly_diagnostic_active",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value": true,
+              "__name__": true,
+              "instance": true,
+              "job": true
+            },
+            "indexByName": {
+              "anomaly_type": 0,
+              "root_cause": 1,
+              "trigger_feature": 2,
+              "remediation": 3
+            },
+            "renameByName": {
+              "anomaly_type": "Anomalietyp",
+              "root_cause": "Root Cause",
+              "trigger_feature": "Trigger",
+              "remediation": "Remediation"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Historie der Anomalien",
+      "description": "Zeitliche Historie der erkannten Anomalien.",
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 10
+      },
+      "targets": [
+        {
+          "expr": "ml_anomaly_diagnostic_active{anomaly_type!=\"NONE\"}",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "__name__": true,
+              "instance": true,
+              "job": true,
+              "Value": true
+            },
+            "indexByName": {
+              "Time": 0,
+              "anomaly_type": 1,
+              "root_cause": 2,
+              "trigger_feature": 3,
+              "remediation": 4
+            },
+            "renameByName": {
+              "Time": "Zeit",
+              "anomaly_type": "Anomalietyp",
+              "root_cause": "Root Cause",
+              "trigger_feature": "Trigger",
+              "remediation": "Remediation"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Data Drift – PSI und KS",
+      "description": "Statistische Überwachung der Eingabeverteilungen. PSI und KS zeigen Data Drift und bestimmen nicht allein den Systemzustand.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 17
+      },
+      "targets": [
+        {
+          "expr": "ml_anomaly_drift_psi",
+          "legendFormat": "PSI – {{feature}}",
+          "refId": "A"
+        },
+        {
+          "expr": "ml_anomaly_drift_ks_pvalue",
+          "legendFormat": "KS p-value – {{feature}}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Kontrollierte Infrastrukturindikatoren",
+      "description": "Kontrollierte experimentelle Infrastrukturindikatoren für CPU, Speicher und Pod-Restarts.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 26
+      },
+      "targets": [
+        {
+          "expr": "ml_anomaly_cpu_usage_percent",
+          "legendFormat": "CPU (%)",
+          "refId": "A"
+        },
+        {
+          "expr": "ml_anomaly_memory_usage_percent",
+          "legendFormat": "Memory (%)",
+          "refId": "B"
+        },
+        {
+          "expr": "ml_anomaly_pod_restarts_total",
+          "legendFormat": "Pod-Restarts",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Elec2-Datenstrom",
+      "description": "Aktuelle Werte der fünf verwendeten Elec2-Features.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 34
+      },
+      "targets": [
+        {
+          "expr": "ml_anomaly_nswprice",
+          "legendFormat": "NSW Price",
+          "refId": "A"
+        },
+        {
+          "expr": "ml_anomaly_nswdemand",
+          "legendFormat": "NSW Demand",
+          "refId": "B"
+        },
+        {
+          "expr": "ml_anomaly_vicprice",
+          "legendFormat": "VIC Price",
+          "refId": "C"
+        },
+        {
+          "expr": "ml_anomaly_vicdemand",
+          "legendFormat": "VIC Demand",
+          "refId": "D"
+        },
+        {
+          "expr": "ml_anomaly_transfer",
+          "legendFormat": "Transfer",
+          "refId": "E"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": [
+    "master-thesis",
+    "mlops",
+    "anomaly-detection",
+    "kubernetes",
+    "root-cause",
+    "monitoring"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-5m",
+    "to": "now"
+  },
+  "title": "ML Pipeline – Monitoring und Root Cause",
+  "uid": "ml-monitoring-overview",
+  "version": 14,
+  "refresh": "1s"
+}

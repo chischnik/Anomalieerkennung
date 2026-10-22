@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+
+# Variables d'environnement et secrets
+.env
+.env.*
+!.env.example
+
+# Fichiers temporaires et journaux
+*.log
+nulcurl.exe
+
+# Résultats générés des évaluations
+evaluation/results/
+evaluation/figures/
+
+# Éditeurs et système
+.vscode/
+.DS_Store
+Thumbs.db
